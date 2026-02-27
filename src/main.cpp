@@ -12,9 +12,9 @@
 #include "imgui.h"
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
-// Core Logic
 #include "core/VideoProcessor.hpp"
 #include "filters/FlickerRemovalFilter.hpp"
+#include "filters/StructuralBlendFilter.hpp"
 #include "portable-file-dialogs.h"
 
 // Utility to upload OpenCV Mat to OpenGL Texture
@@ -72,6 +72,7 @@ int main(int, char **) {
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   (void)io;
+  io.FontGlobalScale = 1.2f; // Default font size adjusted
   ImGui::StyleColorsDark();
 
   // 3. Setup Platform/Renderer backends
@@ -88,6 +89,8 @@ int main(int, char **) {
 
   int windowSize = flickerFilter->getWindowSize();
   float strength = 0.8f;
+  int passes = 1;
+  int flickerMode = 0; // 0 = Lighting, 1 = AI Structural
 
   int previewFrameIndex = 0;
   GLuint previewTexture = 0;
@@ -109,7 +112,12 @@ int main(int, char **) {
     ImGui::NewFrame();
 
     // ImGui UI Construction
-    ImGui::Begin("Flicker Removal Settings");
+    ImGui::Begin("UI Settings");
+    ImGui::SliderFloat("Text Size", &io.FontGlobalScale, 0.5f, 3.0f, "%.2f");
+    ImGui::End();
+
+    // Main Unified Window
+    ImGui::Begin("Flicker Removal Tool");
 
     ImGui::InputText("Input Video", inputPathBuf, IM_ARRAYSIZE(inputPathBuf));
     ImGui::SameLine();
@@ -141,6 +149,7 @@ int main(int, char **) {
         doLoadVideo();
       }
     }
+    ImGui::SameLine();
     if (ImGui::Button("Load Video")) {
       doLoadVideo();
     }
@@ -151,54 +160,150 @@ int main(int, char **) {
     ImGui::Separator();
 
     // Parameter adjustment
-    ImGui::Text("Flicker Removal Parameters");
-    if (ImGui::SliderInt("Window Size (Frames)", &windowSize, 1, 30)) {
-      flickerFilter->setWindowSize(windowSize);
+    ImGui::Text("Flicker Removal Type");
+    ImGui::RadioButton("Lighting Flicker (輝度・照明)", &flickerMode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("AI Generation Flicker (形状・絵柄)", &flickerMode, 1);
+    ImGui::Separator();
+
+    ImGui::Text("Parameters");
+
+    ImGui::Text("Presets: ");
+    ImGui::SameLine();
+    if (ImGui::Button("Low (弱)")) {
+      windowSize = 5;
+      strength = 0.5f;
+      passes = 1;
     }
-    if (ImGui::SliderFloat("Blend Strength", &strength, 0.0f, 1.0f)) {
-      flickerFilter->setStrength(strength);
+    ImGui::SameLine();
+    if (ImGui::Button("Medium (中)")) {
+      windowSize = 15;
+      strength = 0.8f;
+      passes = 2;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("High (強)")) {
+      windowSize = 30;
+      strength = 1.0f;
+      passes = 3;
     }
 
+    ImGui::SliderInt("Window Size (Frames)", &windowSize, 1, 30);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("How many surrounding frames to average. Larger = "
+                        "smoother but slower.");
+
+    ImGui::SliderFloat("Blend Strength", &strength, 0.0f, 1.0f);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("How much of the smoothed luminance to blend in. 1.0 = "
+                        "Max smoothing.");
+
+    ImGui::SliderInt("Passes (Repeats)", &passes, 1, 5);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("How many times to apply the filter. Higher passes = "
+                        "stronger flicker reduction.");
+
+    ImGui::Separator();
+
+    // Preview
+    ImGui::Text("Preview");
     // Preview controls
     if (processor.getTotalFrames() > 0 && !isProcessing) {
-      ImGui::Separator();
-      ImGui::Text("Preview");
       if (ImGui::SliderInt("Preview Frame", &previewFrameIndex, 0,
                            processor.getTotalFrames() - 1)) {
+        processor.clearFilters();
+        for (int p = 0; p < passes; ++p) {
+          std::shared_ptr<VideoFilter> filter;
+          if (flickerMode == 0) {
+            auto lfilter = std::make_shared<FlickerRemovalFilter>();
+            lfilter->setWindowSize(windowSize);
+            lfilter->setStrength(strength);
+            filter = lfilter;
+          } else {
+            auto sfilter = std::make_shared<StructuralBlendFilter>();
+            sfilter->setWindowSize(windowSize);
+            sfilter->setStrength(strength);
+            filter = sfilter;
+          }
+          processor.addFilter(filter);
+        }
         cv::Mat preview = processor.processPreviewFrame(previewFrameIndex);
         previewTexture = matToTexture(preview, previewTexture);
       }
       if (previewTexture != 0) {
         // Show preview image scaled down
-        float scale = 400.0f / previewWidth;
+        float scale = ImGui::GetContentRegionAvail().x / previewWidth;
+        if (scale > 1.0f)
+          scale = 1.0f; // Don't upscale
         ImGui::Image((void *)(intptr_t)previewTexture,
                      ImVec2(previewWidth * scale, previewHeight * scale));
       }
+    } else if (isProcessing) {
+      ImGui::Text("Processing... No preview available.");
+    } else {
+      ImGui::Text("Load a video to see the preview here.");
     }
     ImGui::Separator();
 
-    // Output and Processing start
-    ImGui::InputText("Output Video", outputPathBuf,
-                     IM_ARRAYSIZE(outputPathBuf));
+    // Export Settings
+    ImGui::Text("Export Settings");
+
+    static int outputMode = 0; // 0=Video, 1=Image Sequence
+    ImGui::RadioButton("Video File Output", &outputMode, 0);
     ImGui::SameLine();
-    if (ImGui::Button("Browse...##Output")) {
-      auto f = pfd::save_file(
-                   "Choose Output Destination", ".",
-                   {"Video Files", "*.mp4 *.mkv *.avi *.mov", "All Files", "*"})
-                   .result();
-      if (!f.empty()) {
-        std::string chosen = f;
-        if (chosen.length() < 4 ||
-            chosen.substr(chosen.length() - 4) != ".mp4") {
-          chosen += ".mp4";
+    ImGui::RadioButton("Image Sequence Folder", &outputMode, 1);
+
+    if (outputMode == 0) {
+      ImGui::InputText("Output Video", outputPathBuf,
+                       IM_ARRAYSIZE(outputPathBuf));
+      ImGui::SameLine();
+      if (ImGui::Button("Browse...##Output")) {
+        auto f = pfd::save_file("Choose Output Destination", ".",
+                                {"Video Files", "*.mp4 *.mkv *.avi *.mov",
+                                 "All Files", "*"})
+                     .result();
+        if (!f.empty()) {
+          std::string chosen = f;
+          if (chosen.length() < 4 ||
+              chosen.substr(chosen.length() - 4) != ".mp4") {
+            chosen += ".mp4";
+          }
+          snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", chosen.c_str());
         }
-        snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", chosen.c_str());
+      }
+    } else {
+      ImGui::InputText("Output Folder", outputPathBuf,
+                       IM_ARRAYSIZE(outputPathBuf));
+      ImGui::SameLine();
+      if (ImGui::Button("Browse...##OutputFolder")) {
+        auto f = pfd::select_folder("Choose Output Folder", ".").result();
+        if (!f.empty()) {
+          snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", f.c_str());
+        }
       }
     }
 
     if (!isProcessing) {
       if (ImGui::Button("Start Processing", ImVec2(150, 40))) {
-        if (processor.setOutput(outputPathBuf)) {
+        bool isSeq = (outputMode == 1);
+        if (processor.setOutput(outputPathBuf, isSeq)) {
+          // Re-populate filters for multi-pass
+          processor.clearFilters();
+          for (int p = 0; p < passes; ++p) {
+            std::shared_ptr<VideoFilter> filter;
+            if (flickerMode == 0) {
+              auto lfilter = std::make_shared<FlickerRemovalFilter>();
+              lfilter->setWindowSize(windowSize);
+              lfilter->setStrength(strength);
+              filter = lfilter;
+            } else {
+              auto sfilter = std::make_shared<StructuralBlendFilter>();
+              sfilter->setWindowSize(windowSize);
+              sfilter->setStrength(strength);
+              filter = sfilter;
+            }
+            processor.addFilter(filter);
+          }
           isProcessing = true;
           statusMessage = "Processing started...";
           statusColor = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);

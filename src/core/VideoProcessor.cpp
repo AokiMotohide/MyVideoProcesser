@@ -1,7 +1,8 @@
 #include "VideoProcessor.hpp"
 #include <iostream>
 
-VideoProcessor::VideoProcessor() : isProcessing(false), stopRequested(false) {
+VideoProcessor::VideoProcessor()
+    : isProcessing(false), stopRequested(false), outputIsImageSequence(false) {
   context.totalFrames = 0;
   context.currentFrame = 0;
   context.fps = 30.0;
@@ -39,8 +40,9 @@ bool VideoProcessor::loadInput(const std::string &path) {
   return true;
 }
 
-bool VideoProcessor::setOutput(const std::string &path) {
+bool VideoProcessor::setOutput(const std::string &path, bool isSequence) {
   outputPath = path;
+  outputIsImageSequence = isSequence;
   return true;
 }
 
@@ -60,14 +62,16 @@ bool VideoProcessor::process() {
   capture.set(cv::CAP_PROP_POS_FRAMES, 0);
   context.currentFrame = 0;
 
-  int codec = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
-  // For image sequences outputs, writer setup might differ or not use
-  // VideoWriter. Assuming video output for now.
-  writer.open(outputPath, codec, context.fps, context.frameSize, true);
+  if (!outputIsImageSequence) {
+    int codec = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
+    // For image sequences outputs, writer setup might differ or not use
+    // VideoWriter. Assuming video output for now.
+    writer.open(outputPath, codec, context.fps, context.frameSize, true);
 
-  if (!writer.isOpened()) {
-    std::cerr << "Failed to open output video: " << outputPath << std::endl;
-    return false;
+    if (!writer.isOpened()) {
+      std::cerr << "Failed to open output video: " << outputPath << std::endl;
+      return false;
+    }
   }
 
   // Initialize filters
@@ -90,11 +94,20 @@ bool VideoProcessor::process() {
       processed = f->apply(processed, context.currentFrame, context);
     }
 
-    writer.write(processed);
+    if (outputIsImageSequence) {
+      char filename[512];
+      snprintf(filename, sizeof(filename), "%s/frame_%05d.png",
+               outputPath.c_str(), context.currentFrame);
+      cv::imwrite(filename, processed);
+    } else {
+      writer.write(processed);
+    }
     context.currentFrame++;
   }
 
-  writer.release();
+  if (!outputIsImageSequence) {
+    writer.release();
+  }
   isProcessing = false;
 
   return !stopRequested;

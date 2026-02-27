@@ -1,51 +1,84 @@
-# フリッカー除去ツール (Flicker Removal Tool)
+# Flicker Removal Tool (フリッカー除去ツール)
 
-このプロジェクトは、動画や連番画像の輝度フリッカー（チカチカする現象）を除去するC++アプリケーションです。OpenCVで動画処理を行い、ImGuiでパラメータの調整やプレビューを行います。
+動画ファイルや連番画像から、チラつき（フリッカー）を取り除くためのC++製ビデオプロセッシングツールです。使いやすいImGuiベースのGUIを備えています。
 
-## 機能概要
-- 動画ファイル (.mp4, .avi など) または連番画像の読み込み
-- Luminance Smoothing (輝度移動平均) アルゴリズムによるフリッカー除去
-- フリッカー除去の「ウィンドウサイズ(適用範囲)」と「ブレンド強度」の調整
-- ImGuiによる処理状況のプログレス表示とリアルタイムプレビュー
+本ツールは、フリッカーの種類に合わせて選べる **2つの強力な除去アルゴリズム** を搭載しています。
 
-## アーキテクチャ (クラス図)
+## 搭載アルゴリズムの仕組み
 
-```mermaid
-classDiagram
-    class VideoProcessor {
-        -string inputPath
-        -string outputPath
-        -vector~VideoFilter*~ filters
-        -int totalFrames
-        -int currentFrame
-        +load(string path)
-        +addFilter(VideoFilter* filter)
-        +process()
-        +save(string path)
-        +getProgress() float
-    }
+### 1. Lighting Flicker（照明・輝度のチラつき）
 
-    class VideoFilter {
-        <<interface>>
-        +apply(Mat& frame, int frameIndex, VideoContext& ctx)* Mat
-        +setStrength(float value)*
-        +getName() string*
-    }
+「画面全体の明るさがパカパカと点滅する」ような昔の蛍光灯の下での撮影や、タイムラプス動画で太陽が雲に隠れたり出たりする際に起きる現象（Global Flicker）に特化しています。
 
-    class FlickerRemovalFilter {
-        -int windowSize
-        -float strength
-        +apply(Mat& frame, int frameIndex, VideoContext& ctx) Mat
-        +setStrength(float value)
-        +setWindowSize(int size)
-        +getName() string
-        -calculateLuminance(Mat& frame) float
-    }
+* **仕組み**: 毎フレームの「画面全体の明るさの平均値」を計算します。前後の数フレーム（Window Sizeで指定）の平均と比べ、現在のフレームが「本来あるべき平均の明るさより異常に明るい（または暗い）」場合、ピクセルごとの数値を強制的になだらかな平均値に合わせるように補正（Luminance Smoothing）します。
 
-    VideoProcessor o-- VideoFilter : Has multiple filters
-    VideoFilter <|-- FlickerRemovalFilter : Implements
+### 2. AI Generation Flicker（AI生成特有の形状・絵柄のチラつき）
+
+生成AI動画（Sora, Runway, Pika, Stable Video Diffusionなど）にありがちな、「画面全体の明るさは変わらないが、局所的な模様がウニョウニョと変形する」「ディテールや形が毎フレーム微妙に違ってチカチカする」ような高周波ノイズに特化しています。
+
+* **仕組み**: 単純に明るさを合わせるのではなく、前後のフレームのピクセルデータそのものを直接ブレンド（Temporal Blending / 時間的ブレンディング）します。「前のフレームの絵柄」と「現在のフレームの絵柄」を滑らかに合成し続けることで、AI特有の微かな形のブレやノイズを強力に押さえ込みます。
+
+---
+
+## 主な機能
+
+- **2つの除去モード切替 (照明用 vs AI用)**
+* **マルチパス・フィルタリング (Passes)**: 効果が弱い場合、1枚の画像に対して処理を数回重ね掛けしてより強力にフリッカーを潰すことができます。
+* **一発プリセットボタン (Low / Medium / High)**: クリックするだけで最適な設定値が入力されます。
+* **リアルタイムプレビュー**: 調整結果をすぐにGUI上で確認できます。
+* **UI独立化**: パラメータ操作やプレビューは1つのメインウィンドウに集約し、「文字サイズの変更（UI Settings）」だけを独立した小ウィンドウで行えます。
+* **入出力の柔軟性**: `.mp4` `$mkv` などの動画入力だけでなく、**出力先として「連番画像（Image Sequence）」のフォルダ出力にも対応**しています。
+
+## 必須環境（要件）
+
+- **CMake** (3.16以上)
+* **C++17対応コンパイラ** (Windows環境ならVisual Studio / MSBuild)
+* **OpenCV** (バージョン4.x推奨。core / videoio / imgprocモジュール)
+* ※GLFWおよびDear ImGuiは、CMakeビルド時に自動的にダウンロード＆構築されます。
+
+---
+
+## 環境構築とビルド手順 (Windows / VS Codeの場合)
+
+### 1. OpenCVの準備
+
+1. [opencv.org](https://opencv.org/releases/) からOpenCV 4.x (Windows版) をダウンロードし、`C:/opencv` 等の分かりやすい場所に展開します。
+2. Windowsの「環境変数」設定から、システム環境変数 `PATH` に OpenCVのbinフォルダ (`C:\opencv\build\x64\vc16\bin` など) を追加してください。
+**(重要: これをやらないと、ビルド後にアプリを実行した際 ｢opencv_world480.dllが見つからない｣ というエラーが出ます)**
+
+### 2. CMakeでのコンパイル
+
+VS Code等のターミナルを開き、プロジェクトの一番上のディレクトリ（このREADMEがある場所）で以下のコマンドを順番に実行します。
+
+```powershell
+# 1. ビルド用ファイルの生成
+cmake -B build
+
+# 2. プロジェクトのコンパイル (Releaseモード)
+cmake --build build --config Release
+```
+
+### 3. アプリケーションの起動
+
+ビルドが成功すると、`build/Release` フォルダに実行ファイルが作成されます。
+ターミナルから以下を打ち込んで起動します。
+
+```powershell
+.\build\Release\FlickerRemovalTool.exe
 ```
 
 ---
 
-... (環境構築の解説などは前述参照)
+## 使い方・操作ガイド
+
+1. **Input Video**: 「Browse...」ボタンを押して、処理したい動画ファイルを選択します。（選択すると自動的に画面下にプレビューが出ます）
+2. **Text Size（文字サイズ調整）**: 画面端にある小さな「UI Settings」ウィンドウのスライダーを動かすと、文字を大きくしたり小さくしたりできます。
+3. **Flicker Removal Type（除去モードの選択）**:
+   * 画面が明るくなったり暗くなったりするチラつきなら **「Lighting Flicker」** を選択します。
+   * AI動画の模様がウニョウニョ変わるチラつきなら **「AI Generation Flicker」** を選択します。
+4. **Presets（強度の設定）**:
+   * 基本は **「Medium (中)」** をクリックしてください。チラつきが酷い場合は「High (強)」を試します。
+5. **Output（出力形式の選択）**:
+   * `Video File`（mp4動画として保存する）か、`Image Sequence Folder`（画像連番としてフォルダにドバッと保存する）かを選び、「Browse...」で保存先を指定します。
+6. **Start Processing**:
+   * 最後に「Start Processing」ボタンを押すと、書き出し処理が始まります。プログレスバーが100%になれば完了です！

@@ -18,6 +18,7 @@ private:
   VideoContext context;
   bool isProcessing;
   bool stopRequested;
+  bool outputIsImageSequence;
 
 public:
   VideoProcessor();
@@ -26,8 +27,8 @@ public:
   // Open video file or image sequence (e.g. "image_%04d.png")
   bool loadInput(const std::string &path);
 
-  // Set output file
-  bool setOutput(const std::string &path);
+  // Set output file or folder
+  bool setOutput(const std::string &path, bool isSequence = false);
 
   // Add a filter to the processing pipeline
   void addFilter(std::shared_ptr<VideoFilter> filter);
