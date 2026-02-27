@@ -1,0 +1,72 @@
+# ==========================================
+# 1. Build & Dependency Directories
+# ==========================================
+# CMakeのビルド出力とFetchContentなどの依存先を完全に除外
+[Bb]uild/
+[Oo]ut/
+_deps/
+.vs/
+bin/
+x64/
+x86/
+
+# ==========================================
+# 2. CMake Generated (Root/Intermediate)
+# ==========================================
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+cmake_uninstall.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+# FetchContent用
+*-populate.*
+
+# ==========================================
+# 3. Visual Studio / MSVC Artifacts
+# ==========================================
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.db
+*.opendb
+*.tlog
+*.recipe
+*.lastbuildstate
+*.idb
+*.pdb
+*.ilk
+
+# ==========================================
+# 4. Compiled Binaries & Objects
+# ==========================================
+*.exe
+*.dll
+*.lib
+*.a
+*.o
+*.obj
+*.so
+*.dylib
+*.exp
+*.res
+*.pch
+
+# ==========================================
+# 5. IDE & Project Specific
+# ==========================================
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+imgui.ini
+.DS_Store
+Thumbs.db
+*.mp4
+*.avi
+*.mkv
+*.mov
