@@ -14,6 +14,7 @@
 
 #include "core/VideoProcessor.hpp"
 #include "filters/FlickerRemovalFilter.hpp"
+#include "filters/NormalMapBlendFilter.hpp"
 #include "filters/StructuralBlendFilter.hpp"
 #include "portable-file-dialogs.h"
 
@@ -164,6 +165,8 @@ int main(int, char **) {
     ImGui::RadioButton("Lighting Flicker (輝度・照明)", &flickerMode, 0);
     ImGui::SameLine();
     ImGui::RadioButton("AI Generation Flicker (形状・絵柄)", &flickerMode, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Normal Map Smoothing (法線マップ用)", &flickerMode, 2);
     ImGui::Separator();
 
     ImGui::Text("Parameters");
@@ -219,11 +222,16 @@ int main(int, char **) {
             lfilter->setWindowSize(windowSize);
             lfilter->setStrength(strength);
             filter = lfilter;
-          } else {
+          } else if (flickerMode == 1) {
             auto sfilter = std::make_shared<StructuralBlendFilter>();
             sfilter->setWindowSize(windowSize);
             sfilter->setStrength(strength);
             filter = sfilter;
+          } else {
+            auto nfilter = std::make_shared<NormalMapBlendFilter>();
+            nfilter->setWindowSize(windowSize);
+            nfilter->setStrength(strength);
+            filter = nfilter;
           }
           processor.addFilter(filter);
         }
@@ -296,11 +304,16 @@ int main(int, char **) {
               lfilter->setWindowSize(windowSize);
               lfilter->setStrength(strength);
               filter = lfilter;
-            } else {
+            } else if (flickerMode == 1) {
               auto sfilter = std::make_shared<StructuralBlendFilter>();
               sfilter->setWindowSize(windowSize);
               sfilter->setStrength(strength);
               filter = sfilter;
+            } else {
+              auto nfilter = std::make_shared<NormalMapBlendFilter>();
+              nfilter->setWindowSize(windowSize);
+              nfilter->setStrength(strength);
+              filter = nfilter;
             }
             processor.addFilter(filter);
           }
