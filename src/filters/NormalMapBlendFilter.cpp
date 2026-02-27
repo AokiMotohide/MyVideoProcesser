@@ -39,8 +39,8 @@ cv::Mat NormalMapBlendFilter::apply(const cv::Mat &frame, int frameIndex,
   // Normal map frames are typically BGR [0, 255].
   // Convert to Vec3f space [-1.0, 1.0] for accurate vector math.
   cv::Mat currentFloat;
-  frame3c.convertTo(currentFloat, CV_32FC3); // 3-channel 32-bit float
-  currentFloat = (currentFloat / 255.0f) * 2.0f - cv::Scalar::all(1.0f);
+  // convertTo(out, type, alpha, beta): out = frame3c * alpha + beta
+  frame3c.convertTo(currentFloat, CV_32FC3, 2.0 / 255.0, -1.0);
 
   if (frameBuffer.empty() || blendWeight == 0.0f) {
     frameBuffer.push_back(currentFloat);
@@ -85,17 +85,17 @@ cv::Mat NormalMapBlendFilter::apply(const cv::Mat &frame, int frameIndex,
     }
   }
 
-  // Add smoothed & normalized vector to the history buffer
-  frameBuffer.push_back(resultFloat);
+  // Add smoothed & normalized vector to the history buffer as a CLONE
+  // so that subsequent modifications don't corrupt past frames
+  frameBuffer.push_back(resultFloat.clone());
   if (frameBuffer.size() > static_cast<size_t>(windowSize)) {
     frameBuffer.pop_front();
   }
 
   // 4. Encode back to BGR [0, 255]
-  resultFloat = (resultFloat + cv::Scalar::all(1.0f)) / 2.0f * 255.0f;
   cv::Mat finalResult;
-  resultFloat.convertTo(finalResult,
-                        CV_8UC3); // Convert back to standard 8-bit unsigned
+  // out = resultFloat * 127.5 + 127.5
+  resultFloat.convertTo(finalResult, CV_8UC3, 127.5, 127.5);
 
   // Since original input might have 4 channels (BGRA), ensure we convert safely
   // back
